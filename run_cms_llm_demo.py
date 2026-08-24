@@ -17,6 +17,7 @@ import json
 from pathlib import Path
 
 from src.execute import adjudicate
+from src.completeness import audit_completeness, default_criteria_inventory
 from src.faithfulness_gate import ClaimVerdict, LayeredFaithfulnessGate
 from src.schema import Coverage, Rule
 
@@ -207,6 +208,27 @@ def _print_human_review(queue):
         print(f"  source : {item.evidence[:160]}")
 
 
+def _print_completeness(audit):
+    print(BAR)
+    print("COMPLETENESS GATE")
+    print(BAR)
+    print(f"criteria inventory : {len(audit.criteria)} source criteria")
+    print(f"covered criteria   : {', '.join(audit.covered_criteria) or '(none)'}")
+    print(f"missing criteria   : {', '.join(audit.missing_criteria) or '(none)'}")
+    print(f"verdict            : {audit.verdict}")
+    if audit.covered_alternatives:
+        for group, covered in audit.covered_alternatives.items():
+            print(f"alternative {group:<6}: {', '.join(covered) or '(none)'}")
+    if audit.unmapped_conditions:
+        print("unmapped generated conditions:")
+        for rule_id, tokens in audit.unmapped_conditions.items():
+            print(f"  - {rule_id}: {', '.join(tokens)}")
+    if audit.notes:
+        print("notes:")
+        for note in audit.notes:
+            print(f"  - {note}")
+
+
 def _claim_trace(claim_result) -> dict:
     span = claim_result.source_span
     return {
@@ -229,7 +251,7 @@ def _claim_trace(claim_result) -> dict:
     }
 
 
-def _write_outputs(policy_text: str, rules: list[Rule], gate_results, queue, output_dir: str):
+def _write_outputs(policy_text: str, rules: list[Rule], gate_results, queue, completeness_audit, output_dir: str):
     """Write final workflow artifacts for the policy-to-rule pipeline."""
 
     out = Path(output_dir)
@@ -258,6 +280,7 @@ def _write_outputs(policy_text: str, rules: list[Rule], gate_results, queue, out
         "policy_id": "CMS_LCD_CGM_EXCERPT",
         "source": "Public CMS CGM coverage policy excerpt",
         "policy_characters": len(policy_text),
+        "completeness_verdict": completeness_audit.verdict,
         "rules": reliable_rules,
     }
 
@@ -277,13 +300,47 @@ def _write_outputs(policy_text: str, rules: list[Rule], gate_results, queue, out
         ],
     }
 
+    inventory_payload = {
+        "policy_id": "CMS_LCD_CGM_EXCERPT",
+        "criteria": [
+            {
+                "criterion_id": c.criterion_id,
+                "text": c.text,
+                "role": c.role,
+                "condition_tokens": c.condition_tokens,
+                "required_in_all_rules": c.required_in_all_rules,
+                "alternative_group": c.alternative_group,
+                "source_span": c.source_span,
+            }
+            for c in completeness_audit.criteria
+        ],
+    }
+
+    completeness_payload = {
+        "policy_id": "CMS_LCD_CGM_EXCERPT",
+        "verdict": completeness_audit.verdict,
+        "covered_criteria": completeness_audit.covered_criteria,
+        "missing_criteria": completeness_audit.missing_criteria,
+        "covered_alternatives": completeness_audit.covered_alternatives,
+        "missing_alternative_groups": completeness_audit.missing_alternative_groups,
+        "unmapped_conditions": completeness_audit.unmapped_conditions,
+        "notes": completeness_audit.notes,
+    }
+
     report_lines = [
         "# Gate Report",
         "",
         "- Policy: CMS LCD CGM excerpt",
+        f"- Source criteria: {len(completeness_audit.criteria)}",
+        f"- Completeness verdict: {completeness_audit.verdict}",
         f"- Candidate rules: {len(rules)}",
         f"- Reliable rules: {len(reliable_rules)}",
         f"- Human review items: {len(queue)}",
+        "",
+        "## Completeness",
+        "",
+        f"- Covered criteria: {', '.join(completeness_audit.covered_criteria) or '(none)'}",
+        f"- Missing criteria: {', '.join(completeness_audit.missing_criteria) or '(none)'}",
         "",
         "## Rule Verdicts",
         "",
@@ -303,9 +360,19 @@ def _write_outputs(policy_text: str, rules: list[Rule], gate_results, queue, out
         json.dumps(review_payload, indent=2),
         encoding="utf-8",
     )
+    (out / "criteria_inventory.json").write_text(
+        json.dumps(inventory_payload, indent=2),
+        encoding="utf-8",
+    )
+    (out / "completeness_audit.json").write_text(
+        json.dumps(completeness_payload, indent=2),
+        encoding="utf-8",
+    )
     (out / "gate_report.md").write_text("\n".join(report_lines) + "\n", encoding="utf-8")
 
     return {
+        "criteria_inventory": out / "criteria_inventory.json",
+        "completeness_audit": out / "completeness_audit.json",
         "reliable_rules": out / "reliable_rules.json",
         "human_review_queue": out / "human_review_queue.json",
         "gate_report": out / "gate_report.md",
@@ -333,6 +400,10 @@ def main():
     print(f"rules loaded     : {len(rules)}")
     print(f"adversarial layer: {'enabled' if args.adversarial else 'off for deterministic demo'}")
 
+    criteria = default_criteria_inventory(policy_text)
+    completeness_audit = audit_completeness(rules, criteria)
+    _print_completeness(completeness_audit)
+
     gate = LayeredFaithfulnessGate(policy_text, run_adversarial=args.adversarial)
     gate_results = gate.run_rules(rules)
     _print_gate_results(gate_results)
@@ -340,7 +411,14 @@ def main():
     queue = gate.human_review_queue(gate_results)
     _print_human_review(queue)
 
-    output_paths = _write_outputs(policy_text, rules, gate_results, queue, args.output_dir)
+    output_paths = _write_outputs(
+        policy_text,
+        rules,
+        gate_results,
+        queue,
+        completeness_audit,
+        args.output_dir,
+    )
 
     passed_ids = {r.rule_id for r in gate_results if r.passed}
     passed_rules = [r for r in rules if r.rule_id in passed_ids]
