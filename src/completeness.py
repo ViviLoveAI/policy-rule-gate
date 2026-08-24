@@ -18,9 +18,13 @@ class Criterion:
     criterion_id: str
     text: str
     role: str
+    healthcare_primitive: str
     condition_tokens: list[str]
     required_in_all_rules: bool = False
     alternative_group: str | None = None
+    clinical_concepts: list[str] = field(default_factory=list)
+    documentation_requirements: list[str] = field(default_factory=list)
+    reviewer_role: str = "payment_integrity_policy_analyst"
     source_span: str = ""
 
 
@@ -41,59 +45,103 @@ CMS_CGM_CRITERIA = [
         criterion_id="C1",
         text="The beneficiary has diabetes mellitus.",
         role="required",
+        healthcare_primitive="clinical_condition",
         condition_tokens=["diagnosis:diabetes_mellitus"],
         required_in_all_rules=True,
+        clinical_concepts=["diabetes mellitus"],
         source_span="The beneficiary has diabetes mellitus.",
     ),
     Criterion(
         criterion_id="C2",
         text="The practitioner documents sufficient CGM training by prescription.",
         role="required",
+        healthcare_primitive="documentation_requirement",
         condition_tokens=["training_documented:true"],
         required_in_all_rules=True,
+        documentation_requirements=["prescription", "training documentation"],
         source_span="The beneficiary's treating practitioner has concluded ... sufficient training ... as evidenced by providing a prescription.",
     ),
     Criterion(
         criterion_id="C3",
         text="The CGM is prescribed according to FDA indications.",
         role="required",
+        healthcare_primitive="device_requirement",
         condition_tokens=["fda_indication:true"],
         required_in_all_rules=True,
+        clinical_concepts=["continuous glucose monitor"],
         source_span="The CGM is prescribed in accordance with its FDA indications for use.",
     ),
     Criterion(
         criterion_id="C4a",
         text="The beneficiary is insulin-treated.",
         role="alternative",
+        healthcare_primitive="treatment_status",
         condition_tokens=["insulin_treated:true"],
         alternative_group="C4",
+        clinical_concepts=["insulin treatment", "diabetes mellitus"],
         source_span="The beneficiary is insulin-treated.",
     ),
     Criterion(
         criterion_id="C4b_i",
         text="The beneficiary has recurrent level 2 hypoglycemic events despite multiple treatment adjustments.",
         role="alternative",
+        healthcare_primitive="clinical_event_threshold",
         condition_tokens=["hypoglycemia_level2_recurrent:true", "attempts_adjustment_multiple:true"],
         alternative_group="C4",
+        clinical_concepts=["level 2 hypoglycemia", "glucose <54 mg/dL"],
+        documentation_requirements=["documented hypoglycemia history", "treatment adjustment attempts"],
         source_span="Recurrent level 2 hypoglycemic events ... that persist despite multiple attempts to adjust medications or modify the diabetes treatment plan.",
     ),
     Criterion(
         criterion_id="C4b_ii",
         text="The beneficiary has one level 3 hypoglycemic event requiring third-party assistance.",
         role="alternative",
+        healthcare_primitive="clinical_event_threshold",
         condition_tokens=["hypoglycemia_level3_event:true", "third_party_assistance:true"],
         alternative_group="C4",
+        clinical_concepts=["level 3 hypoglycemia", "glucose <54 mg/dL", "third-party assistance"],
+        documentation_requirements=["documented hypoglycemia history"],
         source_span="A history of one level 3 hypoglycemic event ... requiring third-party assistance.",
     ),
     Criterion(
         criterion_id="C5",
         text="The practitioner had a qualifying visit within six months before ordering the CGM.",
         role="required",
+        healthcare_primitive="time_window_documentation_requirement",
         condition_tokens=["six_month_visit:true"],
         required_in_all_rules=True,
+        documentation_requirements=["in-person visit", "Medicare-approved telehealth visit", "diabetes control evaluation"],
         source_span="Within six months prior to ordering the CGM ... visit ... to evaluate diabetes control and determine that criteria (1)-(4) are met.",
     ),
 ]
+
+
+HEALTHCARE_POLICY_METADATA = {
+    "domain": "healthcare_payment_integrity",
+    "policy_type": "LCD coverage criteria excerpt",
+    "coverage_domain": "durable_medical_equipment",
+    "service_category": "continuous_glucose_monitor",
+    "source_authority": "CMS Medicare Coverage Database",
+    "reviewer_role": "payment_integrity_policy_analyst",
+    "clinical_concepts": [
+        "diabetes mellitus",
+        "continuous glucose monitor",
+        "insulin treatment",
+        "level 2 hypoglycemia",
+        "level 3 hypoglycemia",
+    ],
+    "documentation_requirements": [
+        "prescription",
+        "sufficient training documentation",
+        "FDA indications for use",
+        "six-month practitioner visit",
+        "hypoglycemia documentation",
+    ],
+    "coding_relevance": [
+        "ICD-10 diagnosis list referenced in LCD-related Policy Article",
+        "coverage criteria can support downstream coding and payment review",
+    ],
+}
 
 
 def default_criteria_inventory(policy_text: str) -> list[Criterion]:

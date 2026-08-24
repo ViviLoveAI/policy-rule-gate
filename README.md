@@ -1,27 +1,47 @@
-# Policy-to-Rule Pipeline with a Faithfulness Gate
+# Healthcare Policy-to-Rule Pipeline with Completeness and Faithfulness Gates
 
 A proof-of-concept for **Content Management in Health Care**: converting written
-coverage policy into executable adjudication rules, with an NLI-based
-**faithfulness gate** that blocks any generated rule not grounded in the source
-policy before it can reach production.
+coverage policy into executable adjudication rules, with a source-grounded
+criteria inventory, completeness audit, layered faithfulness gate, and human
+review queue before any rule can execute.
 
 > Payment-integrity organizations turn written policy (CMS NCDs/LCDs, medical
 > necessity policies, payer-provider contracts) into the rules that decide what
 > gets paid. That translation is manual, slow, and cannot be wrong. This POC
-> automates it with an LLM and gates the output on faithfulness: every rule is
-> verified against the policy text, and unverified rules are routed to human
-> review with an auditable evidence trail.
+> treats LLM extraction as proposal generation, then verifies both completeness
+> (did we miss source criteria?) and faithfulness (did we invent unsupported
+> conditions?) before producing a reliable rules file.
+
+## Healthcare-specific design
+
+The final CMS demo targets a payer payment-integrity workflow for durable
+medical equipment coverage criteria:
+
+- **Policy source**: CMS CGM coverage criteria excerpt
+- **Policy primitives**: clinical conditions, documentation requirements,
+  device requirements, clinical event thresholds, time-window requirements
+- **Reviewer role**: payment-integrity policy analyst
+- **Outputs**: reliable structured rules, source-grounded criteria inventory,
+  completeness audit, and human review queue
+
+The core distinction is:
+
+```
+criteria inventory = source-grounded map of what the policy says
+structured rules   = executable coverage pathways compiled from that map
+```
 
 ## Pipeline
 
 ```
-policy text
-  -> [1] extract      LLM -> structured rules                (src/extract.py)
-  -> [2] verbalize    each rule -> one NL claim sentence      (src/verbalize.py)
-  -> [3] gate         retrieve source + NLI judge -> pass/block (src/gate.py)
-         |                                          \--blocked--> human review
-  -> [4] execute      apply passed rules to sample claims      (src/execute.py)
-  -> demo output      policy -> rules (pass/block) -> decisions
+CMS policy text
+  -> criteria inventory         source-grounded policy condition map
+  -> LLM extraction             candidate structured rules
+  -> completeness audit         checks that source criteria are covered
+  -> layered faithfulness gate  source span + consistency + semantic/adversarial review
+       |-- PASS                 reliable_rules.json
+       |-- REVIEW/FAIL          human_review_queue.json
+  -> execution                  apply only PASS rules to synthetic claims
 ```
 
 ## Run (offline, zero dependencies)
@@ -35,6 +55,24 @@ The demo runs entirely on bundled mock components (`MockLLMClient`,
 CGM policy; three are grounded and pass the gate, while one (`R4`, an invented
 "age ≥ 65" threshold the policy never states) is **blocked and routed to human
 review** — demonstrating the gate catching a numeric soft-fabrication.
+
+## Run the final CMS workflow
+
+```bash
+python run_cms_llm_demo.py
+python run_cms_llm_demo.py --adversarial
+python run_cms_llm_demo.py --policy data/cms_cgm_policy_clean.txt --rules data/llm_extracted_rules.json --adversarial
+```
+
+The final workflow writes:
+
+```
+outputs/criteria_inventory.json
+outputs/completeness_audit.json
+outputs/reliable_rules.json
+outputs/human_review_queue.json
+outputs/gate_report.md
+```
 
 ## Going live
 

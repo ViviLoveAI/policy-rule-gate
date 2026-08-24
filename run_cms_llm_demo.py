@@ -17,7 +17,11 @@ import json
 from pathlib import Path
 
 from src.execute import adjudicate
-from src.completeness import audit_completeness, default_criteria_inventory
+from src.completeness import (
+    HEALTHCARE_POLICY_METADATA,
+    audit_completeness,
+    default_criteria_inventory,
+)
 from src.faithfulness_gate import ClaimVerdict, LayeredFaithfulnessGate
 from src.schema import Coverage, Rule
 
@@ -279,6 +283,7 @@ def _write_outputs(policy_text: str, rules: list[Rule], gate_results, queue, com
     reliable_payload = {
         "policy_id": "CMS_LCD_CGM_EXCERPT",
         "source": "Public CMS CGM coverage policy excerpt",
+        "healthcare_policy_metadata": HEALTHCARE_POLICY_METADATA,
         "policy_characters": len(policy_text),
         "completeness_verdict": completeness_audit.verdict,
         "rules": reliable_rules,
@@ -286,6 +291,7 @@ def _write_outputs(policy_text: str, rules: list[Rule], gate_results, queue, com
 
     review_payload = {
         "policy_id": "CMS_LCD_CGM_EXCERPT",
+        "reviewer_role": HEALTHCARE_POLICY_METADATA["reviewer_role"],
         "items": [
             {
                 "rule_id": item.rule_id,
@@ -302,14 +308,19 @@ def _write_outputs(policy_text: str, rules: list[Rule], gate_results, queue, com
 
     inventory_payload = {
         "policy_id": "CMS_LCD_CGM_EXCERPT",
+        "healthcare_policy_metadata": HEALTHCARE_POLICY_METADATA,
         "criteria": [
             {
                 "criterion_id": c.criterion_id,
                 "text": c.text,
                 "role": c.role,
+                "healthcare_primitive": c.healthcare_primitive,
                 "condition_tokens": c.condition_tokens,
                 "required_in_all_rules": c.required_in_all_rules,
                 "alternative_group": c.alternative_group,
+                "clinical_concepts": c.clinical_concepts,
+                "documentation_requirements": c.documentation_requirements,
+                "reviewer_role": c.reviewer_role,
                 "source_span": c.source_span,
             }
             for c in completeness_audit.criteria
@@ -331,6 +342,9 @@ def _write_outputs(policy_text: str, rules: list[Rule], gate_results, queue, com
         "# Gate Report",
         "",
         "- Policy: CMS LCD CGM excerpt",
+        f"- Domain: {HEALTHCARE_POLICY_METADATA['domain']}",
+        f"- Policy type: {HEALTHCARE_POLICY_METADATA['policy_type']}",
+        f"- Service category: {HEALTHCARE_POLICY_METADATA['service_category']}",
         f"- Source criteria: {len(completeness_audit.criteria)}",
         f"- Completeness verdict: {completeness_audit.verdict}",
         f"- Candidate rules: {len(rules)}",
