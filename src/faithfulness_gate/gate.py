@@ -46,7 +46,7 @@ class LayeredFaithfulnessGate:
             return False
         return high_risk or semantic_verdict == ClaimVerdict.REVIEW
 
-    def check_claim(self, claim) -> ClaimCheckResult:
+    def check_claim(self, claim, sibling_claim_texts: list[str] | None = None) -> ClaimCheckResult:
         spans = self.retriever.retrieve(claim.text, top_k=3)
         best = spans[0] if spans else SourceSpan("", 0.0)
 
@@ -86,6 +86,7 @@ class LayeredFaithfulnessGate:
                 evidence=best.text,
                 policy_text=self.policy_text,
                 reason=semantic.reason,
+                sibling_claims=sibling_claim_texts or [],
             )
             verdict = adversarial.verdict
             reason = adversarial.judge_reasoning or adversarial.prosecutor_report
@@ -105,7 +106,8 @@ class LayeredFaithfulnessGate:
 
     def run_rule(self, rule: Rule) -> RuleGateResult:
         claims = rule_to_atomic_claims(rule)
-        results = [self.check_claim(c) for c in claims]
+        sibling_claim_texts = [c.text for c in claims]
+        results = [self.check_claim(c, sibling_claim_texts) for c in claims]
         verdict, reason = aggregate_claim_verdicts(results)
         return RuleGateResult(
             rule_id=rule.rule_id,

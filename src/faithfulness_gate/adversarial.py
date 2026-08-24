@@ -51,7 +51,16 @@ class AdversarialAdjudicator:
         except Exception:
             return {"verdict": "REVIEW", "reason": f"parse error: {raw[:120]}"}
 
-    def run(self, claim: str, evidence: str, policy_text: str, reason: str) -> AdversarialResult:
+    def run(
+        self,
+        claim: str,
+        evidence: str,
+        policy_text: str,
+        reason: str,
+        sibling_claims: list[str] | None = None,
+    ) -> AdversarialResult:
+        sibling_claims = sibling_claims or []
+        siblings_block = "\n".join(f"- {c}" for c in sibling_claims if c != claim) or "(none)"
         if not self.enabled:
             return AdversarialResult(
                 verdict=ClaimVerdict.REVIEW,
@@ -71,10 +80,20 @@ FULL POLICY CONTEXT:
 CLAIM:
 {claim}
 
+OTHER ATOMIC CLAIMS FROM THE SAME GENERATED RULE:
+{siblings_block}
+
 Trigger reason from earlier gate layers:
 {reason}
 
-Accuse the claim if it is unsupported, overgeneralized, contradicted, missing a condition, or introduces a requirement absent from the source. If it is supported, say "No accusations."
+Important scope rule:
+- The claim is ONE atomic component of a larger structured rule.
+- Do NOT accuse this claim merely because it omits neighboring policy criteria
+  that are represented by the other atomic claims above.
+- Accuse only if this atomic claim itself is unsupported, contradicted,
+  overgeneralized, or introduces absent information.
+
+If this atomic claim is supported by the source, say "No accusations."
 """
         report = self._response_text(self.prosecutor_model, prosecutor_prompt)
 
@@ -89,13 +108,23 @@ FULL POLICY CONTEXT:
 CLAIM:
 {claim}
 
+OTHER ATOMIC CLAIMS FROM THE SAME GENERATED RULE:
+{siblings_block}
+
 PROSECUTOR REPORT:
 {report}
 
 Return JSON only:
 {{"verdict": "PASS" | "REVIEW" | "FAIL", "confidence": 0.0-1.0, "reason": "one sentence"}}
 
-Use PASS only if the claim is clearly supported. Use FAIL if an unsupported or contradicted claim is upheld. Use REVIEW if ambiguity remains.
+Important scope rule:
+- Judge this as an atomic claim, not as a complete standalone coverage rule.
+- Do NOT return FAIL merely because the atomic claim omits neighboring criteria
+  that appear in the sibling claims.
+- Return PASS if the atomic claim itself is clearly supported by the source.
+- Return FAIL if the atomic claim itself is unsupported, contradicted,
+  overgeneralized, or introduces absent information.
+- Return REVIEW if ambiguity remains.
 """
         raw = self._response_text(self.judge_model, judge_prompt)
         parsed = self._parse_json(raw)

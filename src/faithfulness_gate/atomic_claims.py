@@ -50,7 +50,7 @@ CONDITION_CLAIMS = {
         True,
     ),
     "six_month_visit:true": (
-        "Within six months prior to ordering the CGM, the treating practitioner had an in-person or Medicare-approved telehealth visit with the beneficiary.",
+        "Within six months prior to ordering the CGM, the treating practitioner had an in-person or Medicare-approved telehealth visit with the beneficiary to evaluate diabetes control and determine that criteria 1 through 4 were met.",
         True,
     ),
     "age_ge:65": (
