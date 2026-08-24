@@ -10,10 +10,25 @@ from __future__ import annotations
 from .schema import ClaimDecision, Coverage, Rule
 
 
+def _normalize_service(text: str) -> str:
+    text = text.lower().replace("_", " ")
+    if text in {"cgm", "continuous glucose monitor", "continuous glucose monitor (cgm)"}:
+        return "continuous glucose monitor"
+    if "continuous glucose monitor" in text or "cgm" in text:
+        return "continuous glucose monitor"
+    return text
+
+
+def _service_matches(rule: Rule, claim: dict) -> bool:
+    rule_service = _normalize_service(rule.service)
+    claim_service = _normalize_service(claim.get("service", ""))
+    return rule_service in claim_service or claim_service in rule_service
+
+
 def _rule_matches(rule: Rule, claim: dict) -> bool:
     """A claim matches a rule if the claimed service matches and all of the
     rule's conditions are satisfied by the claim's attributes."""
-    if rule.service.split()[0].lower() not in claim.get("service", "").lower():
+    if not _service_matches(rule, claim):
         return False
     attrs = claim.get("attributes", {})
     for cond in rule.conditions:

@@ -207,11 +207,117 @@ def _print_human_review(queue):
         print(f"  source : {item.evidence[:160]}")
 
 
+def _claim_trace(claim_result) -> dict:
+    span = claim_result.source_span
+    return {
+        "claim_id": claim_result.claim.claim_id,
+        "condition_token": claim_result.claim.condition_token,
+        "claim": claim_result.claim.text,
+        "verdict": claim_result.verdict.value,
+        "reason": claim_result.reason,
+        "evidence": span.text if span else "",
+        "evidence_score": span.score if span else 0.0,
+        "consistency_risk_flags": (
+            claim_result.consistency.risk_flags if claim_result.consistency else []
+        ),
+        "semantic_confidence": (
+            claim_result.semantic.confidence if claim_result.semantic else None
+        ),
+        "adversarial_judge_reasoning": (
+            claim_result.adversarial.judge_reasoning if claim_result.adversarial else ""
+        ),
+    }
+
+
+def _write_outputs(policy_text: str, rules: list[Rule], gate_results, queue, output_dir: str):
+    """Write final workflow artifacts for the policy-to-rule pipeline."""
+
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    by_rule = {r.rule_id: r for r in rules}
+
+    reliable_rules = []
+    for result in gate_results:
+        if not result.passed:
+            continue
+        rule = by_rule[result.rule_id]
+        reliable_rules.append(
+            {
+                "rule_id": rule.rule_id,
+                "service": rule.service,
+                "coverage": rule.coverage.value,
+                "conditions": rule.conditions,
+                "exclusions": rule.exclusions,
+                "source_hint": rule.source_hint,
+                "gate_verdict": result.verdict.value,
+                "evidence_trace": [_claim_trace(c) for c in result.claim_results],
+            }
+        )
+
+    reliable_payload = {
+        "policy_id": "CMS_LCD_CGM_EXCERPT",
+        "source": "Public CMS CGM coverage policy excerpt",
+        "policy_characters": len(policy_text),
+        "rules": reliable_rules,
+    }
+
+    review_payload = {
+        "policy_id": "CMS_LCD_CGM_EXCERPT",
+        "items": [
+            {
+                "rule_id": item.rule_id,
+                "claim_id": item.claim_id,
+                "verdict": item.verdict.value,
+                "reason": item.reason,
+                "claim": item.claim_text,
+                "evidence": item.evidence,
+                "recommended_action": item.recommended_action,
+            }
+            for item in queue
+        ],
+    }
+
+    report_lines = [
+        "# Gate Report",
+        "",
+        "- Policy: CMS LCD CGM excerpt",
+        f"- Candidate rules: {len(rules)}",
+        f"- Reliable rules: {len(reliable_rules)}",
+        f"- Human review items: {len(queue)}",
+        "",
+        "## Rule Verdicts",
+        "",
+    ]
+    for result in gate_results:
+        report_lines.append(f"- `{result.rule_id}`: **{result.verdict.value}** - {result.reason}")
+    if queue:
+        report_lines.extend(["", "## Human Review Queue", ""])
+        for item in queue:
+            report_lines.append(f"- `{item.rule_id}/{item.claim_id}`: {item.reason}")
+
+    (out / "reliable_rules.json").write_text(
+        json.dumps(reliable_payload, indent=2),
+        encoding="utf-8",
+    )
+    (out / "human_review_queue.json").write_text(
+        json.dumps(review_payload, indent=2),
+        encoding="utf-8",
+    )
+    (out / "gate_report.md").write_text("\n".join(report_lines) + "\n", encoding="utf-8")
+
+    return {
+        "reliable_rules": out / "reliable_rules.json",
+        "human_review_queue": out / "human_review_queue.json",
+        "gate_report": out / "gate_report.md",
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--policy", default="data/cms_cgm_policy_clean.txt")
     parser.add_argument("--rules", default="data/llm_extracted_rules.json")
     parser.add_argument("--claims", default="data/cms_sample_claims.json")
+    parser.add_argument("--output-dir", default="outputs")
     parser.add_argument("--adversarial", action="store_true", help="Run OpenAI prosecutor-judge adjudication when OPENAI_API_KEY is set.")
     args = parser.parse_args()
 
@@ -234,6 +340,8 @@ def main():
     queue = gate.human_review_queue(gate_results)
     _print_human_review(queue)
 
+    output_paths = _write_outputs(policy_text, rules, gate_results, queue, args.output_dir)
+
     passed_ids = {r.rule_id for r in gate_results if r.passed}
     passed_rules = [r for r in rules if r.rule_id in passed_ids]
     decisions = adjudicate(claims, passed_rules)
@@ -243,6 +351,12 @@ def main():
     print(BAR)
     for decision in decisions:
         print(f"{decision.claim_id}: {decision.decision.upper():<16} {decision.rationale}")
+
+    print("\n" + BAR)
+    print("PIPELINE OUTPUT FILES")
+    print(BAR)
+    for label, path in output_paths.items():
+        print(f"{label:<20} {path}")
 
     print("\n" + BAR)
     print(f"SUMMARY: {len(passed_rules)}/{len(rules)} rules passed; {len(queue)} claim(s) routed to human review.")
