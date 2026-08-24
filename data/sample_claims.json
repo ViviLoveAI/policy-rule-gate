@@ -1,0 +1,32 @@
+[
+  {
+    "claim_id": "C1",
+    "service": "continuous glucose monitor",
+    "attributes": {
+      "diagnosis": "diabetes_mellitus",
+      "insulin_treated": "true",
+      "prior_auth": "approved",
+      "age": 58
+    }
+  },
+  {
+    "claim_id": "C2",
+    "service": "continuous glucose monitor",
+    "attributes": {
+      "diagnosis": "gestational_diabetes",
+      "insulin_treated": "true",
+      "prior_auth": "approved",
+      "age": 33
+    }
+  },
+  {
+    "claim_id": "C3",
+    "service": "continuous glucose monitor",
+    "attributes": {
+      "diagnosis": "diabetes_mellitus",
+      "insulin_treated": "true",
+      "prior_auth": "pending",
+      "age": 70
+    }
+  }
+]

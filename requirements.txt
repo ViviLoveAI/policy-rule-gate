@@ -1,0 +1,7 @@
+# The offline demo (run_demo.py) needs NOTHING beyond the Python 3.10+ stdlib.
+# These are only required when you activate the real seams (OpenAI + DeBERTa + BM25):
+
+openai>=1.0            # OpenAIClient  (src/llm.py)
+rank-bm25>=0.2         # BM25Retriever (src/retriever.py)
+transformers>=4.40     # DeBERTa NLI   (src/nli.py) -- or wire in your PHANTOM detector
+torch>=2.0             # backend for transformers

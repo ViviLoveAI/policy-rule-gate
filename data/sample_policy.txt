@@ -1,0 +1,5 @@
+Continuous Glucose Monitor (CGM) Coverage Policy — Sample
+
+A continuous glucose monitor (CGM) is covered for patients with diabetes mellitus who are treated with insulin. Coverage requires that the treating clinician documents insulin use in the medical record. Continuous glucose monitors are not covered for gestational diabetes. Prior authorization must be approved before a continuous glucose monitor is dispensed. Coverage is limited to devices cleared by the FDA for therapeutic use.
+
+Note: This is a synthetic policy authored for demonstration purposes only and does not reflect any real payer or CMS determination. It is modeled on the structure of a CMS National/Local Coverage Determination.
