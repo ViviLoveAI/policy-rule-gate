@@ -61,7 +61,7 @@ review** — demonstrating the gate catching a numeric soft-fabrication.
 ```bash
 python run_cms_llm_demo.py
 python run_cms_llm_demo.py --adversarial
-python run_cms_llm_demo.py --policy data/cms_cgm_policy_clean.txt --rules data/llm_extracted_rules.json --adversarial
+python run_cms_llm_demo.py --policy data/cms_cgm_policy_clean.txt --rules data/llm_extracted_rules.json --adversarial --evaluate
 ```
 
 The final workflow writes:
@@ -72,7 +72,14 @@ outputs/completeness_audit.json
 outputs/reliable_rules.json
 outputs/human_review_queue.json
 outputs/gate_report.md
+outputs/evaluation_report.json
+outputs/evaluation_report.md
 ```
+
+The evaluation layer reports completeness, faithfulness, synthetic perturbation
+detection, auditability, and execution-gating metrics. It uses public CMS policy
+text, a source-grounded criteria inventory, synthetic unsupported-rule
+perturbations, and synthetic claim cases; no PHI is used.
 
 ## Going live
 

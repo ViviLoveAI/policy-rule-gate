@@ -17,6 +17,7 @@ import json
 from pathlib import Path
 
 from src.execute import adjudicate
+from src.evaluation import evaluate_pipeline, write_evaluation_outputs
 from src.completeness import (
     HEALTHCARE_POLICY_METADATA,
     audit_completeness,
@@ -400,6 +401,7 @@ def main():
     parser.add_argument("--claims", default="data/cms_sample_claims.json")
     parser.add_argument("--output-dir", default="outputs")
     parser.add_argument("--adversarial", action="store_true", help="Run OpenAI prosecutor-judge adjudication when OPENAI_API_KEY is set.")
+    parser.add_argument("--evaluate", action="store_true", help="Write lightweight evaluation metrics for completeness, faithfulness, auditability, and execution gating.")
     args = parser.parse_args()
 
     policy_text = _read_text_or_fallback(args.policy)
@@ -443,6 +445,25 @@ def main():
     print(BAR)
     for decision in decisions:
         print(f"{decision.claim_id}: {decision.decision.upper():<16} {decision.rationale}")
+
+    if args.evaluate:
+        eval_report = evaluate_pipeline(
+            rules=rules,
+            gate_results=gate_results,
+            completeness_audit=completeness_audit,
+            human_review_queue=queue,
+            decisions=decisions,
+        )
+        eval_paths = write_evaluation_outputs(eval_report, args.output_dir)
+        output_paths.update(eval_paths)
+
+        print("\n" + BAR)
+        print("EVALUATION")
+        print(BAR)
+        for section, values in eval_report.metrics.items():
+            print(section.upper())
+            for key, value in values.items():
+                print(f"  {key}: {value}")
 
     print("\n" + BAR)
     print("PIPELINE OUTPUT FILES")
