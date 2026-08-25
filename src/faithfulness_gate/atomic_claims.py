@@ -37,6 +37,10 @@ CONDITION_CLAIMS = {
         "The beneficiary has recurrent level 2 hypoglycemic events with glucose less than 54 mg/dL.",
         True,
     ),
+    "hypoglycemia_level2_glucose_lt_70:true": (
+        "The beneficiary has recurrent level 2 hypoglycemic events with glucose less than 70 mg/dL.",
+        True,
+    ),
     "attempts_adjustment_multiple:true": (
         "The recurrent level 2 hypoglycemic events persist despite multiple attempts to adjust medications or modify the diabetes treatment plan.",
         True,
@@ -104,11 +108,12 @@ def rule_to_atomic_claims(rule: Rule) -> list[AtomicClaim]:
         )
 
     if not claims:
+        coverage_text = "covered" if rule.coverage.value == "covered" else "not covered"
         claims.append(
             AtomicClaim(
                 rule_id=rule.rule_id,
                 claim_id=f"{rule.rule_id}.C1",
-                text=f"The policy states that {rule.service} is {rule.coverage.value}.",
+                text=f"The policy states that {rule.service} is {coverage_text}.",
                 condition_token="coverage",
                 source_hint=rule.source_hint,
                 high_risk=True,

@@ -12,9 +12,10 @@ from dataclasses import dataclass
 from pathlib import Path
 import json
 
-from .completeness import CompletenessAudit
+from .completeness import CompletenessAudit, audit_completeness
+from .faithfulness_gate import LayeredFaithfulnessGate
 from .faithfulness_gate.schema import ClaimVerdict, RuleGateResult
-from .schema import ClaimDecision, Rule
+from .schema import ClaimDecision, Coverage, Rule
 
 
 @dataclass
@@ -23,10 +24,114 @@ class EvaluationReport:
     notes: list[str]
 
 
+@dataclass
+class PerturbationResult:
+    case_id: str
+    perturbation_type: str
+    verdict: str
+    routed: bool
+    hard_fail: bool
+    reason: str
+
+
 def _ratio(numerator: int, denominator: int) -> float:
     if denominator == 0:
         return 0.0
     return round(numerator / denominator, 4)
+
+
+def _perturbation_rules() -> list[Rule]:
+    """Rules intentionally corrupted for pressure-testing the gate."""
+
+    return [
+        Rule(
+            rule_id="PERT_age_threshold",
+            service="continuous glucose monitor",
+            coverage=Coverage.COVERED,
+            conditions=["age_ge:65"],
+            source_hint="Perturbation: unsupported age threshold",
+        ),
+        Rule(
+            rule_id="PERT_prior_authorization",
+            service="continuous glucose monitor",
+            coverage=Coverage.COVERED,
+            conditions=["prior_auth:approved"],
+            source_hint="Perturbation: unsupported prior authorization condition",
+        ),
+        Rule(
+            rule_id="PERT_numeric_threshold",
+            service="continuous glucose monitor",
+            coverage=Coverage.COVERED,
+            conditions=["hypoglycemia_level2_glucose_lt_70:true"],
+            source_hint="Perturbation: glucose threshold changed from 54 to 70 mg/dL",
+        ),
+        Rule(
+            rule_id="PERT_polarity_flip",
+            service="continuous glucose monitor",
+            coverage=Coverage.NOT_COVERED,
+            conditions=[],
+            source_hint="Perturbation: coverage polarity flipped",
+        ),
+    ]
+
+
+def _omission_rules() -> list[Rule]:
+    """A pathway that omits a required criterion from the criteria inventory."""
+
+    return [
+        Rule(
+            rule_id="PERT_omitted_six_month_visit",
+            service="continuous glucose monitor",
+            coverage=Coverage.COVERED,
+            conditions=[
+                "diagnosis:diabetes_mellitus",
+                "training_documented:true",
+                "fda_indication:true",
+                "insulin_treated:true",
+            ],
+            source_hint="Perturbation: required six-month visit omitted",
+        )
+    ]
+
+
+def _gate_reason(result: RuleGateResult) -> str:
+    reasons = [
+        claim.reason
+        for claim in result.claim_results
+        if claim.verdict != ClaimVerdict.PASS and claim.reason
+    ]
+    return "; ".join(reasons) or result.reason
+
+
+def _run_perturbation_suite(policy_text: str) -> list[PerturbationResult]:
+    """Run a small synthetic stress test without calling external APIs."""
+
+    gate = LayeredFaithfulnessGate(policy_text, run_adversarial=False)
+    gate_results = gate.run_rules(_perturbation_rules())
+    results = [
+        PerturbationResult(
+            case_id=result.rule_id,
+            perturbation_type=result.rule_id.removeprefix("PERT_"),
+            verdict=result.verdict.value,
+            routed=result.verdict != ClaimVerdict.PASS,
+            hard_fail=result.verdict == ClaimVerdict.FAIL,
+            reason=_gate_reason(result),
+        )
+        for result in gate_results
+    ]
+
+    omission_audit = audit_completeness(_omission_rules())
+    results.append(
+        PerturbationResult(
+            case_id="PERT_required_criterion_omission",
+            perturbation_type="required_criterion_omission",
+            verdict=omission_audit.verdict,
+            routed=omission_audit.verdict != "PASS",
+            hard_fail=False,
+            reason="; ".join(omission_audit.notes),
+        )
+    )
+    return results
 
 
 def evaluate_pipeline(
@@ -35,6 +140,7 @@ def evaluate_pipeline(
     completeness_audit: CompletenessAudit,
     human_review_queue: list,
     decisions: list[ClaimDecision],
+    policy_text: str | None = None,
 ) -> EvaluationReport:
     """Compute lightweight reliability metrics for the POC."""
 
@@ -58,6 +164,9 @@ def evaluate_pipeline(
         if "injected" in r.rule_id.lower() or "error" in r.rule_id.lower()
     ]
     detected_injected = [r for r in injected_rules if r.verdict != ClaimVerdict.PASS]
+    perturbations = _run_perturbation_suite(policy_text) if policy_text else []
+    routed_perturbations = [p for p in perturbations if p.routed]
+    hard_failed_perturbations = [p for p in perturbations if p.hard_fail]
 
     reliable_with_trace = [
         r for r in pass_rules
@@ -98,6 +207,22 @@ def evaluate_pipeline(
             "injected_unsupported_rules": len(injected_rules),
             "detected_injected_unsupported_rules": len(detected_injected),
             "injected_detection_rate": _ratio(len(detected_injected), len(injected_rules)),
+            "stress_test_cases": len(perturbations),
+            "stress_test_hard_failures": len(hard_failed_perturbations),
+            "stress_test_routed_to_review_or_fail": len(routed_perturbations),
+            "hard_fail_rate": _ratio(len(hard_failed_perturbations), len(perturbations)),
+            "routed_to_review_or_fail_rate": _ratio(len(routed_perturbations), len(perturbations)),
+            "test_cases": [
+                {
+                    "case_id": p.case_id,
+                    "perturbation_type": p.perturbation_type,
+                    "verdict": p.verdict,
+                    "routed": p.routed,
+                    "hard_fail": p.hard_fail,
+                    "reason": p.reason,
+                }
+                for p in perturbations
+            ],
         },
         "auditability": {
             "reliable_rules_with_evidence_trace": len(reliable_with_trace),
@@ -119,6 +244,7 @@ def evaluate_pipeline(
         "Evaluation uses public CMS policy text and synthetic perturbation/claim cases; no PHI is used.",
         "Completeness metrics evaluate coverage against a source-grounded criteria inventory.",
         "Faithfulness metrics evaluate whether generated rule claims pass the layered gate before execution.",
+        "Perturbation metrics distinguish hard FAIL decisions from REVIEW routing; both prevent unsafe rules from executing.",
         "Production evaluation should expand to multiple NCD/LCD policies and reviewer-labeled edge cases.",
     ]
     return EvaluationReport(metrics=metrics, notes=notes)

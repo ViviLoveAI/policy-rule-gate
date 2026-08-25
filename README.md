@@ -117,7 +117,8 @@ python run_cms_llm_demo.py --evaluate
 ```
 
 This uses the built-in CMS CGM policy excerpt, fallback extracted rules, a
-synthetic unsupported age-threshold perturbation, and synthetic claim cases.
+synthetic unsupported rule for the main gate demonstration, a separate
+perturbation stress test, and synthetic claim cases.
 
 Expected high-level result:
 
@@ -213,7 +214,7 @@ Reports lightweight reliability metrics:
 - completeness coverage
 - alternative branch coverage
 - rule and claim pass rates
-- unsupported perturbation detection
+- perturbation stress-test routing and hard-fail rates
 - evidence-trace coverage
 - execution gating on synthetic claims
 
@@ -231,8 +232,17 @@ This setup tests the reliability risks that matter for policy automation:
 - missing source criteria
 - unsupported additions
 - numeric/time-window mismatches
+- coverage polarity flips
 - unmapped generated conditions
 - whether only PASS rules are allowed to execute
+
+The perturbation suite is separate from the main extracted-rule run. It injects
+small corrupted rules such as unsupported age or prior-authorization conditions,
+a glucose-threshold mismatch, a covered/not-covered polarity flip, and an
+omitted required criterion. The consistency layer checks for generic
+source-evidence conflicts, such as a claim introducing a structured attribute
+that the retrieved source span does not contain, instead of relying only on
+one-off hard-coded error patterns.
 
 Production evaluation would expand to multiple CMS NCD/LCD policies, coding
 articles, payer-specific medical necessity policies, and reviewer-labeled edge
@@ -245,13 +255,17 @@ The fallback CMS demo produces metrics such as:
 ```text
 criteria_coverage: 1.0
 alternative_branch_coverage: 1.0
-injected_detection_rate: 1.0
+hard_fail_rate: 0.6
+routed_to_review_or_fail_rate: 1.0
 evidence_trace_coverage: 1.0
 ```
 
 These numbers are not intended as a broad benchmark. They demonstrate that the
 workflow can measure completeness, faithfulness, auditability, and execution
-control on a small auditable policy example.
+control on a small auditable policy example. The perturbation metrics separate
+confirmed FAIL decisions from REVIEW routing, because a healthcare policy system
+can be useful even when some ambiguous or incomplete outputs are blocked for
+human review rather than automatically labeled as hard failures.
 
 ## Legacy Offline Demo
 

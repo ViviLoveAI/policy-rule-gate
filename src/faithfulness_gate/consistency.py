@@ -23,6 +23,30 @@ _NUMBER_WORDS = {
 }
 
 
+INTRODUCTION_SLOTS = {
+    "visit_window",
+    "glucose_threshold",
+    "hypoglycemia_level",
+    "event_count",
+    "insulin_treated",
+    "diagnosis",
+    "fda_indication",
+    "training_documented",
+    "third_party_assistance",
+    "age_threshold",
+    "prior_authorization",
+}
+
+
+COMPARABLE_SLOTS = {
+    "visit_window",
+    "glucose_threshold",
+    "hypoglycemia_level",
+    "event_count",
+    "age_threshold",
+}
+
+
 def _num(value: str) -> int | None:
     value = value.lower()
     if value.isdigit():
@@ -76,7 +100,12 @@ def _extract_attributes(text: str) -> dict:
     if "prior authorization" in t:
         attrs["prior_authorization"] = True
 
-    attrs["polarity"] = "not_covered" if "not covered" in t else "covered" if "covered" in t else None
+    if "not covered" in t or "not eligible for coverage" in t:
+        attrs["polarity"] = "not_covered"
+    elif "covered" in t or "eligible for coverage" in t or "coverage of" in t:
+        attrs["polarity"] = "covered"
+    else:
+        attrs["polarity"] = None
     attrs["modality"] = "must" if "must" in t else "may" if "may" in t else None
     return attrs
 
@@ -88,19 +117,20 @@ def check_consistency(claim: str, evidence: str) -> ConsistencyResult:
     evidence_attrs = _extract_attributes(evidence)
     flags: list[str] = []
 
-    for slot in ("visit_window", "glucose_threshold", "hypoglycemia_level", "event_count", "age_threshold"):
+    for slot in COMPARABLE_SLOTS:
         if slot in claim_attrs and slot in evidence_attrs and claim_attrs[slot] != evidence_attrs[slot]:
             flags.append(f"{slot} mismatch: claim={claim_attrs[slot]} evidence={evidence_attrs[slot]}")
 
-    if "age_threshold" in claim_attrs and "age_threshold" not in evidence_attrs:
-        flags.append("claim introduces an age threshold not found in the retrieved evidence")
-
-    if "prior_authorization" in claim_attrs and "prior_authorization" not in evidence_attrs:
-        flags.append("claim introduces prior authorization not found in the retrieved evidence")
-
     if claim_attrs.get("polarity") and evidence_attrs.get("polarity"):
         if claim_attrs["polarity"] != evidence_attrs["polarity"]:
-            flags.append(f"coverage polarity mismatch: claim={claim_attrs['polarity']} evidence={evidence_attrs['polarity']}")
+            flags.append(f"polarity mismatch: claim={claim_attrs['polarity']} evidence={evidence_attrs['polarity']}")
+
+    for slot in sorted(INTRODUCTION_SLOTS):
+        if slot in claim_attrs and slot not in evidence_attrs:
+            flags.append(
+                f"claim introduces structured attribute absent from retrieved evidence: "
+                f"{slot}={claim_attrs[slot]}"
+            )
 
     hard_fail = any("mismatch" in f or "introduces" in f for f in flags)
     verdict = ClaimVerdict.FAIL if hard_fail else ClaimVerdict.PASS

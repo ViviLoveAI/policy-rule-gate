@@ -165,6 +165,7 @@ def audit_completeness(
     covered_criteria: set[str] = set()
     missing_criteria: list[str] = []
     notes: list[str] = []
+    required_rule_omissions: dict[str, list[str]] = {}
 
     for criterion in criteria:
         if any(_criterion_covered(rule, criterion) for rule in rules):
@@ -177,6 +178,7 @@ def audit_completeness(
                 rule.rule_id for rule in rules if not _criterion_covered(rule, criterion)
             ]
             if missing_from:
+                required_rule_omissions[criterion.criterion_id] = missing_from
                 notes.append(
                     f"{criterion.criterion_id} is required but missing from rule(s): {', '.join(missing_from)}"
                 )
@@ -208,7 +210,7 @@ def audit_completeness(
         notes.append(f"{rule_id} contains condition(s) not mapped to inventory: {', '.join(tokens)}")
 
     verdict = "PASS"
-    if missing_criteria or missing_alternative_groups:
+    if missing_criteria or missing_alternative_groups or required_rule_omissions:
         verdict = "REVIEW"
     if unmapped_conditions:
         verdict = "REVIEW"

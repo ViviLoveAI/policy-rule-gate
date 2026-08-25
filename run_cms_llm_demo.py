@@ -453,6 +453,7 @@ def main():
             completeness_audit=completeness_audit,
             human_review_queue=queue,
             decisions=decisions,
+            policy_text=policy_text,
         )
         eval_paths = write_evaluation_outputs(eval_report, args.output_dir)
         output_paths.update(eval_paths)
@@ -463,6 +464,13 @@ def main():
         for section, values in eval_report.metrics.items():
             print(section.upper())
             for key, value in values.items():
+                if key == "test_cases":
+                    for case in value:
+                        print(
+                            f"  - {case['case_id']}: {case['verdict']} "
+                            f"({case['perturbation_type']})"
+                        )
+                    continue
                 print(f"  {key}: {value}")
 
     print("\n" + BAR)
