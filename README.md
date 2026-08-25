@@ -215,6 +215,7 @@ Reports lightweight reliability metrics:
 - alternative branch coverage
 - rule and claim pass rates
 - perturbation stress-test routing and hard-fail rates
+- false-positive rate on valid policy pathways
 - evidence-trace coverage
 - execution gating on synthetic claims
 
@@ -233,6 +234,7 @@ This setup tests the reliability risks that matter for policy automation:
 - unsupported additions
 - numeric/time-window mismatches
 - coverage polarity flips
+- false positives on valid extracted rules
 - unmapped generated conditions
 - whether only PASS rules are allowed to execute
 
@@ -243,6 +245,10 @@ omitted required criterion. The consistency layer checks for generic
 source-evidence conflicts, such as a claim introducing a structured attribute
 that the retrieved source span does not contain, instead of relying only on
 one-off hard-coded error patterns.
+
+The evaluation also runs valid positive-control pathways through the same gate
+to estimate false positives: cases where a faithful rule would be incorrectly
+blocked for review.
 
 Production evaluation would expand to multiple CMS NCD/LCD policies, coding
 articles, payer-specific medical necessity policies, and reviewer-labeled edge
@@ -257,6 +263,7 @@ criteria_coverage: 1.0
 alternative_branch_coverage: 1.0
 hard_fail_rate: 0.6
 routed_to_review_or_fail_rate: 1.0
+false_positive_rate: 0.0
 evidence_trace_coverage: 1.0
 ```
 

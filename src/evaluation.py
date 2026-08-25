@@ -94,6 +94,54 @@ def _omission_rules() -> list[Rule]:
     ]
 
 
+def _positive_control_rules() -> list[Rule]:
+    """Valid CMS CGM pathways that should not be blocked by the gate."""
+
+    shared_required = [
+        "diagnosis:diabetes_mellitus",
+        "training_documented:true",
+        "fda_indication:true",
+        "six_month_visit:true",
+    ]
+    return [
+        Rule(
+            rule_id="POS_insulin_pathway",
+            service="continuous glucose monitor",
+            coverage=Coverage.COVERED,
+            conditions=[
+                *shared_required[:3],
+                "insulin_treated:true",
+                shared_required[3],
+            ],
+            source_hint="Positive control: valid insulin-treated CGM pathway",
+        ),
+        Rule(
+            rule_id="POS_level2_hypoglycemia_pathway",
+            service="continuous glucose monitor",
+            coverage=Coverage.COVERED,
+            conditions=[
+                *shared_required[:3],
+                "hypoglycemia_level2_recurrent:true",
+                "attempts_adjustment_multiple:true",
+                shared_required[3],
+            ],
+            source_hint="Positive control: valid recurrent level 2 hypoglycemia pathway",
+        ),
+        Rule(
+            rule_id="POS_level3_hypoglycemia_pathway",
+            service="continuous glucose monitor",
+            coverage=Coverage.COVERED,
+            conditions=[
+                *shared_required[:3],
+                "hypoglycemia_level3_event:true",
+                "third_party_assistance:true",
+                shared_required[3],
+            ],
+            source_hint="Positive control: valid level 3 hypoglycemia pathway",
+        ),
+    ]
+
+
 def _gate_reason(result: RuleGateResult) -> str:
     reasons = [
         claim.reason
@@ -134,6 +182,24 @@ def _run_perturbation_suite(policy_text: str) -> list[PerturbationResult]:
     return results
 
 
+def _run_false_positive_suite(policy_text: str) -> list[PerturbationResult]:
+    """Run valid controls to estimate whether the gate over-blocks good rules."""
+
+    gate = LayeredFaithfulnessGate(policy_text, run_adversarial=False)
+    gate_results = gate.run_rules(_positive_control_rules())
+    return [
+        PerturbationResult(
+            case_id=result.rule_id,
+            perturbation_type="valid_rule_control",
+            verdict=result.verdict.value,
+            routed=result.verdict != ClaimVerdict.PASS,
+            hard_fail=result.verdict == ClaimVerdict.FAIL,
+            reason=_gate_reason(result),
+        )
+        for result in gate_results
+    ]
+
+
 def evaluate_pipeline(
     rules: list[Rule],
     gate_results: list[RuleGateResult],
@@ -167,6 +233,8 @@ def evaluate_pipeline(
     perturbations = _run_perturbation_suite(policy_text) if policy_text else []
     routed_perturbations = [p for p in perturbations if p.routed]
     hard_failed_perturbations = [p for p in perturbations if p.hard_fail]
+    positive_controls = _run_false_positive_suite(policy_text) if policy_text else []
+    false_positives = [p for p in positive_controls if p.routed]
 
     reliable_with_trace = [
         r for r in pass_rules
@@ -224,6 +292,21 @@ def evaluate_pipeline(
                 for p in perturbations
             ],
         },
+        "false_positive": {
+            "positive_control_cases": len(positive_controls),
+            "false_positive_count": len(false_positives),
+            "false_positive_rate": _ratio(len(false_positives), len(positive_controls)),
+            "test_cases": [
+                {
+                    "case_id": p.case_id,
+                    "case_type": p.perturbation_type,
+                    "verdict": p.verdict,
+                    "routed": p.routed,
+                    "reason": p.reason,
+                }
+                for p in positive_controls
+            ],
+        },
         "auditability": {
             "reliable_rules_with_evidence_trace": len(reliable_with_trace),
             "reliable_rules": len(pass_rules),
@@ -245,6 +328,7 @@ def evaluate_pipeline(
         "Completeness metrics evaluate coverage against a source-grounded criteria inventory.",
         "Faithfulness metrics evaluate whether generated rule claims pass the layered gate before execution.",
         "Perturbation metrics distinguish hard FAIL decisions from REVIEW routing; both prevent unsafe rules from executing.",
+        "False-positive metrics run valid policy pathways through the same gate to measure over-blocking.",
         "Production evaluation should expand to multiple NCD/LCD policies and reviewer-labeled edge cases.",
     ]
     return EvaluationReport(metrics=metrics, notes=notes)

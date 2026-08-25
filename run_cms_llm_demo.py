@@ -466,9 +466,10 @@ def main():
             for key, value in values.items():
                 if key == "test_cases":
                     for case in value:
+                        case_type = case.get("perturbation_type") or case.get("case_type")
                         print(
                             f"  - {case['case_id']}: {case['verdict']} "
-                            f"({case['perturbation_type']})"
+                            f"({case_type})"
                         )
                     continue
                 print(f"  {key}: {value}")
