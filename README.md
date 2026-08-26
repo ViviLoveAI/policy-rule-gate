@@ -274,6 +274,25 @@ confirmed FAIL decisions from REVIEW routing, because a healthcare policy system
 can be useful even when some ambiguous or incomplete outputs are blocked for
 human review rather than automatically labeled as hard failures.
 
+## Evaluation Interpretation
+
+In the current CMS demo, 3 of 5 corrupted perturbations are hard failures:
+unsupported age threshold, unsupported prior authorization, and glucose-threshold
+mismatch. These cases show where the gate is strongest: explicit structured
+attributes and numeric thresholds that conflict with the retrieved source span.
+
+The remaining 2 corrupted perturbations are routed to REVIEW rather than
+automatically labeled FAIL: coverage polarity flip and required-criterion
+omission. This is a useful failure-mode signal. The current gate is more
+conservative on polarity and omission cases, but those cases are still blocked
+from execution and routed to a human reviewer.
+
+The false-positive check uses 3 valid positive-control pathways, one for each
+CMS CGM coverage branch in the demo. All 3 pass the gate, yielding a
+false_positive_rate of 0.0. This should be interpreted as a small
+positive-control sanity check, not a broad estimate of production false-positive
+rate.
+
 ## Legacy Offline Demo
 
 The earlier minimal demo is still available:
